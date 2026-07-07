@@ -1,15 +1,18 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
+import requests
 
-# Set up page config
 st.set_page_config(page_title="Health Baseline Tracker", layout="wide")
 st.title("Physical Health Baseline Tracker (Cloud Version)")
-st.write("Log your metrics from anywhere. Data syncs instantly to Google Sheets.")
+st.write("Log your metrics from anywhere. Data syncs instantly to your Google Sheet.")
 
-# Establish connection to Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Retrieve the secure script URL from secrets
+if "script_url" in st.secrets:
+    SCRIPT_URL = st.secrets["script_url"]
+else:
+    st.error("Please add your script_url to the Streamlit Secrets!")
+    st.stop()
 
 # 1. METADATA & CONTEXT
 st.header("1. Log Details & Context")
@@ -70,7 +73,7 @@ with c3:
 
 # 5. ADDITIONAL TEXT NOTES
 st.header("5. Additional Notes")
-notes = st.text_area("Specific anomalies (e.g., light-sensitive headache, nasal infection smell, muscle flipping over spine):")
+notes = st.text_area("Specific anomalies:")
 
 # SAVE DATA BUTTON
 st.markdown("---")
@@ -81,29 +84,18 @@ if st.button("Log Daily Data", type="primary"):
         "Overall Swelling": overall_swelling, "Right Spinal Pain": spinal_pain, "Lower Back Pain": lower_back,
         "Leg Nerve Tightness": nerve_tightness, "Hand Arm Pain": hand_arm_pain, "Numbness Severity": numbness,
         "Fatigue": fatigue, "Anxiety/Irritability": anxiety_mood, "Sweating": sweating,
-        "Trigger_ShortDrive": drive_short, "Trigger_LongDrive": drive_long, "Trigger_SteroidTaper": steroid_taper,
-        "Trigger_MedIssue": med_issue, "Trigger_HeavyActivity": heavy_activity, "Trigger_Diet": diet_flare, "Trigger_Heat": extreme_heat,
+        "Trigger_ShortDrive": str(drive_short), "Trigger_LongDrive": str(drive_long), "Trigger_SteroidTaper": str(steroid_taper),
+        "Trigger_MedIssue": str(med_issue), "Trigger_HeavyActivity": str(heavy_activity), "Trigger_Diet": str(diet_flare), "Trigger_Heat": str(extreme_heat),
         "Notes": notes
     }
     
     try:
-        # Check if the sheet has data, otherwise start fresh safely
-        try:
-            existing_data = conn.read()
-        except Exception:
-            existing_data = pd.DataFrame()
-            
-        new_df = pd.DataFrame([data_row])
-        
-        if not existing_data.empty:
-            updated_df = pd.concat([existing_data, new_df], ignore_index=True)
+        response = requests.post(SCRIPT_URL, json=data_row)
+        if response.status_code == 200:
+            st.success("Successfully logged data directly to your original Google Sheet!")
+            st.rerun()
         else:
-            updated_df = new_df
-        
-        # Update the live Google Sheet
-        conn.update(data=updated_df)
-        st.success("Successfully logged data directly to your online Google Sheet!")
-        st.rerun()
+            st.error(f"Cloud syncing issue. Status code: {response.status_code}")
     except Exception as e:
         st.error(f"Error saving to cloud storage: {e}")
 
@@ -111,10 +103,15 @@ if st.button("Log Daily Data", type="primary"):
 st.markdown("---")
 st.header("📊 Past Logs History")
 try:
-    df_history = conn.read()
-    if not df_history.empty:
-        st.dataframe(df_history.iloc[::-1], use_container_width=True)
+    response = requests.get(SCRIPT_URL)
+    if response.status_code == 200:
+        rows = response.json()
+        if len(rows) > 1:
+            df_history = pd.DataFrame(rows[1:], columns=rows[0])
+            st.dataframe(df_history.iloc[::-1], use_container_width=True)
+        else:
+            st.info("No records found in the Google Sheet yet. Log your first entry above!")
     else:
-        st.info("No records found in the Google Sheet yet. Log your first day above!")
-except Exception as e:
-    st.info("Awaiting live database link connection...")
+        st.info("Awaiting cloud link response...")
+except Exception:
+    st.info("Loading live database connection...")
