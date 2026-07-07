@@ -9,7 +9,6 @@ st.title("Physical Health Baseline Tracker (Cloud Version)")
 st.write("Log your metrics from anywhere. Data syncs instantly to Google Sheets.")
 
 # Establish connection to Google Sheets
-# (The spreadsheet URL will be securely stored in the cloud settings)
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # 1. METADATA & CONTEXT
@@ -71,7 +70,7 @@ with c3:
 
 # 5. ADDITIONAL TEXT NOTES
 st.header("5. Additional Notes")
-notes = st.text_area("Specific anomalies:")
+notes = st.text_area("Specific anomalies (e.g., light-sensitive headache, nasal infection smell, muscle flipping over spine):")
 
 # SAVE DATA BUTTON
 st.markdown("---")
@@ -88,10 +87,18 @@ if st.button("Log Daily Data", type="primary"):
     }
     
     try:
-        # Read current data from Google Sheet
-        existing_data = conn.read()
+        # Check if the sheet has data, otherwise start fresh safely
+        try:
+            existing_data = conn.read()
+        except Exception:
+            existing_data = pd.DataFrame()
+            
         new_df = pd.DataFrame([data_row])
-        updated_df = pd.concat([existing_data, new_df], ignore_index=True)
+        
+        if not existing_data.empty:
+            updated_df = pd.concat([existing_data, new_df], ignore_index=True)
+        else:
+            updated_df = new_df
         
         # Update the live Google Sheet
         conn.update(data=updated_df)
@@ -108,6 +115,6 @@ try:
     if not df_history.empty:
         st.dataframe(df_history.iloc[::-1], use_container_width=True)
     else:
-        st.info("No records found in the Google Sheet yet.")
+        st.info("No records found in the Google Sheet yet. Log your first day above!")
 except Exception as e:
     st.info("Awaiting live database link connection...")
